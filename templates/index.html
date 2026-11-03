@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #1e293b;
+            padding: 16px 24px;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-icon {
+            width: 40px;
+            height: 40px;
+            background: #3b82f6;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .header p {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .header-right {
+            margin-left: auto;
+        }
+
+        .model-switch {
+            display: flex;
+            background: #0f172a;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+
+        .model-switch button {
+            padding: 6px 12px;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .model-switch button.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .model-switch button:hover:not(.active) {
+            color: #e2e8f0;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .message.bot {
+            background: #1e293b;
+            align-self: flex-start;
+            border: 1px solid #334155;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.user {
+            background: #3b82f6;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message .label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            color: #94a3b8;
+        }
+
+        .message.user .label {
+            color: #bfdbfe;
+        }
+
+
+        .input-area {
+            background: #1e293b;
+            padding: 16px 24px;
+            border-top: 1px solid #334155;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        #question {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #question:focus {
+            border-color: #3b82f6;
+        }
+
+        #question::placeholder {
+            color: #475569;
+        }
+
+        #send-btn {
+            padding: 12px 24px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #send-btn:hover {
+            background: #2563eb;
+        }
+
+        #send-btn:disabled {
+            background: #475569;
+            cursor: not-allowed;
+        }
+
+        .typing {
+            display: flex;
+            gap: 4px;
+            padding: 8px 0;
+        }
+
+        .typing span {
+            width: 8px;
+            height: 8px;
+            background: #64748b;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        .welcome {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+
+        .welcome h2 {
+            font-size: 22px;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+        }
+
+        .welcome p {
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .suggestion {
+            background: #1e293b;
+            border: 1px solid #334155;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .suggestion:hover {
+            border-color: #3b82f6;
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-icon">AI</div>
+        <div>
+            <h1>RAG Chatbot</h1>
+            <p>Ask anything about your documents</p>
+        </div>
+        <div class="header-right">
+            <div class="model-switch">
+                <button class="active" onclick="switchModel('auto', this)">Auto</button>
+                <button onclick="switchModel('gemini', this)">Gemini</button>
+                <button onclick="switchModel('groq', this)">Groq</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-container" id="chat">
+        <div class="welcome" id="welcome">
+            <h2>Welcome to RAG Chatbot</h2>
+            <p>Ask any question about the uploaded documents and get accurate answers.</p>
+            <div class="suggestions">
+                <div class="suggestion" onclick="askSuggestion(this)">What is the Afridi tribe?</div>
+                <div class="suggestion" onclick="askSuggestion(this)">How many sub-tribes are there?</div>
+                <div class="suggestion" onclick="askSuggestion(this)">Tell me about Khyber Pass</div>
+                <div class="suggestion" onclick="askSuggestion(this)">What is Pashtunwali?</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="input-area">
+        <div class="input-wrapper">
+            <input type="text" id="question" placeholder="Type your question here..." autocomplete="off">
+            <button id="send-btn" onclick="sendQuestion()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const chat = document.getElementById("chat");
+        const input = document.getElementById("question");
+        const btn = document.getElementById("send-btn");
+        const welcome = document.getElementById("welcome");
+        let selectedModel = "auto";
+
+        function switchModel(model, el) {
+            selectedModel = model;
+            document.querySelectorAll(".model-switch button").forEach(b => b.classList.remove("active"));
+            el.classList.add("active");
+        }
+
+        input.addEventListener("keydown", function(e) {
+            if (e.key === "Enter" && !btn.disabled) sendQuestion();
+        });
+
+        function askSuggestion(el) {
+            input.value = el.textContent;
+            sendQuestion();
+        }
+
+        function addMessage(text, type, sources, model) {
+            if (welcome) welcome.remove();
+
+            const div = document.createElement("div");
+            div.className = "message " + type;
+
+            const label = document.createElement("div");
+            label.className = "label";
+            label.textContent = type === "user" ? "You" : "AI Assistant";
+            div.appendChild(label);
+
+            const content = document.createElement("div");
+            content.textContent = text;
+            div.appendChild(content);
+
+            if (model) {
+                const modelBadge = document.createElement("div");
+                modelBadge.style.cssText = "font-size:10px;color:#64748b;margin-top:6px;";
+                modelBadge.textContent = "Powered by " + model;
+                div.appendChild(modelBadge);
+            }
+
+
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+            return div;
+        }
+
+        function addTyping() {
+            const div = document.createElement("div");
+            div.className = "message bot";
+            div.id = "typing";
+
+            const label = document.createElement("div");
+            label.className = "label";
+            label.textContent = "AI Assistant";
+            div.appendChild(label);
+
+            const dots = document.createElement("div");
+            dots.className = "typing";
+            dots.innerHTML = "<span></span><span></span><span></span>";
+            div.appendChild(dots);
+
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function removeTyping() {
+            const el = document.getElementById("typing");
+            if (el) el.remove();
+        }
+
+        async function sendQuestion() {
+            const question = input.value.trim();
+            if (!question) return;
+
+            addMessage(question, "user");
+            input.value = "";
+            btn.disabled = true;
+            addTyping();
+
+            try {
+                const res = await fetch("/ask", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: question, model: selectedModel })
+                });
+
+                removeTyping();
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => null);
+                    const errMsg = errData && errData.error ? errData.error : "Something went wrong. Please try again.";
+                    addMessage(errMsg, "bot");
+                } else {
+                    const data = await res.json();
+                    addMessage(data.answer, "bot", data.sources, data.model);
+                }
+            } catch (err) {
+                removeTyping();
+                addMessage("Could not connect to the server.", "bot");
+            }
+
+            btn.disabled = false;
+            input.focus();
+        }
+    </script>
+</body>
+</html>
