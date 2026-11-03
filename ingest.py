@@ -7,7 +7,6 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from pinecone import Pinecone, ServerlessSpec
-from langchain_pinecone import PineconeVectorStore
 
 load_dotenv()
 
@@ -31,7 +30,7 @@ print("[3/5] Loading embedding model...")
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 print("[3/5] Done! Embedding model ready.")
 
-# Step 4: Create Pinecone index if not exists
+# Step 4: Create Pinecone index
 print("[4/5] Setting up Pinecone index...")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
@@ -47,12 +46,23 @@ if INDEX_NAME not in existing_indexes:
 else:
     print(f"[4/5] Index '{INDEX_NAME}' already exists.")
 
-# Step 5: Store in Pinecone
-print("[5/5] Storing chunks in Pinecone...")
-vectorstore = PineconeVectorStore.from_documents(
-    documents=chunks,
-    embedding=embeddings,
-    index_name=INDEX_NAME,
-)
+index = pc.Index(INDEX_NAME)
+
+# Step 5: Embed and upload
+print("[5/5] Embedding and uploading to Pinecone...")
+batch_size = 10
+for i in range(0, len(chunks), batch_size):
+    batch = chunks[i:i + batch_size]
+    texts = [c.page_content for c in batch]
+    metadatas = [{"page": c.metadata.get("page", 0), "text": c.page_content} for c in batch]
+    vectors = embeddings.embed_documents(texts)
+
+    records = []
+    for j, (vec, meta) in enumerate(zip(vectors, metadatas)):
+        records.append({"id": f"chunk-{i+j}", "values": vec, "metadata": meta})
+
+    index.upsert(vectors=records)
+    print(f"  Uploaded {min(i + batch_size, len(chunks))}/{len(chunks)} chunks...")
+
 print(f"[5/5] Done! {len(chunks)} chunks stored in Pinecone.")
 print("Ingestion complete! Run app.py to start the chatbot.")

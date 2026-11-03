@@ -5,12 +5,11 @@ warnings.filterwarnings("ignore")
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
 
 load_dotenv()
 
@@ -19,11 +18,18 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-vectorstore = PineconeVectorStore(
-    index_name="rag-chatbot",
-    embedding=embeddings,
-)
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+index = pc.Index("rag-chatbot")
+
+
+def retrieve_docs(question, k=5):
+    query_vec = embeddings.embed_query(question)
+    results = index.query(vector=query_vec, top_k=k, include_metadata=True)
+    docs = []
+    for match in results.matches:
+        docs.append(match.metadata.get("text", ""))
+    return docs
+
 
 gemini_llm = ChatGoogleGenerativeAI(
     model="gemini-3.8-flash",
@@ -55,23 +61,13 @@ prompt = ChatPromptTemplate.from_template(
     "Answer:"
 )
 
-
-def format_docs(docs):
-    return "\n\n".join(doc.page_content for doc in docs)
+chain_tail = prompt | StrOutputParser()
 
 
-def build_chain(llm):
-    return (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-
-gemini_chain = build_chain(gemini_llm)
-groq_chain = build_chain(groq_llm)
-groq_backup_chain = build_chain(groq_backup_llm)
+def ask_llm(llm, context, question):
+    messages = prompt.format_messages(context=context, question=question)
+    response = llm.invoke(messages)
+    return response.content
 
 
 @app.route("/")
@@ -89,40 +85,43 @@ def ask():
 
     preferred = data.get("model", "auto")
 
+    docs = retrieve_docs(question)
+    context = "\n\n".join(docs)
+
     answer = None
     used_model = None
 
     if preferred == "gemini":
         try:
-            answer = gemini_chain.invoke(question)
+            answer = ask_llm(gemini_llm, context, question)
             used_model = "Gemini 3.8 Flash"
         except Exception as e:
             return jsonify({"error": f"Gemini failed: {str(e)[:200]}"}), 500
     elif preferred == "groq":
         try:
-            answer = groq_chain.invoke(question)
+            answer = ask_llm(groq_llm, context, question)
             used_model = "Groq (Qwen 27B)"
         except Exception:
             try:
-                answer = groq_backup_chain.invoke(question)
+                answer = ask_llm(groq_backup_llm, context, question)
                 used_model = "Groq (GPT-OSS 20B)"
             except Exception as e:
                 return jsonify({"error": f"Groq failed: {str(e)[:200]}"}), 500
     else:
         try:
-            answer = gemini_chain.invoke(question)
+            answer = ask_llm(gemini_llm, context, question)
             used_model = "Gemini 3.8 Flash"
         except Exception:
             pass
         if answer is None:
             try:
-                answer = groq_chain.invoke(question)
+                answer = ask_llm(groq_llm, context, question)
                 used_model = "Groq (Qwen 27B)"
             except Exception:
                 pass
         if answer is None:
             try:
-                answer = groq_backup_chain.invoke(question)
+                answer = ask_llm(groq_backup_llm, context, question)
                 used_model = "Groq (GPT-OSS 20B)"
             except Exception as e:
                 return jsonify({"error": f"All APIs failed: {str(e)[:200]}"}), 500
